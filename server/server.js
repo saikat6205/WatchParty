@@ -2,8 +2,47 @@ const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+const connectDB = require("./db");
 
+const User = require("./models/User");
+const Video = require("./models/Video");
+const Download = require("./models/Download");
+
+const downloadRoutes = require("./routes/download.routes");
+
+connectDB();
 const app = express();
+app.use(cors());
+
+app.use(express.json());
+
+app.use("/api/downloads", downloadRoutes);
+
+app.use("/api/downloads", downloadRoutes);
+
+app.get("/test-db", async (req, res) => {
+  try {
+    const testUser = await User.create({
+      name: "Test User",
+      email: `test${Date.now()}@example.com`,
+      plan: "free",
+    });
+
+    res.json({
+      success: true,
+      message: "MongoDB is working!",
+      user: testUser,
+    });
+  } catch (error) {
+    console.error("Database test failed:", error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Database test failed",
+      error: error.message,
+    });
+  }
+});
 
 app.use(cors());
 

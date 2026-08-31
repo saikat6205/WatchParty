@@ -12,6 +12,9 @@ export default function RoomPage() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<string[]>([]);
 
+  // Download state
+  const [isDownloading, setIsDownloading] = useState(false);
+
   // Video reference
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -24,81 +27,91 @@ export default function RoomPage() {
   // =========================
   // SOCKET.IO CONNECTION
   // =========================
+
   useEffect(() => {
-  const socket = io("http://localhost:5000");
+    const socket = io("http://localhost:5000");
 
-  socketRef.current = socket;
+    socketRef.current = socket;
 
-  socket.on("connect", () => {
-    console.log("Connected:", socket.id);
+    socket.on("connect", () => {
+      console.log("Connected:", socket.id);
 
-    socket.emit("joinRoom", roomId);
+      socket.emit("joinRoom", roomId);
 
-    console.log("Joined room:", roomId);
-  });
-
-  socket.on("message", (message: string) => {
-    console.log("Received:", message);
-
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      message,
-    ]);
-  });
-
-  // =========================
-  // RECEIVE VIDEO PLAY
-  // =========================
-  socket.on(
-  "video:play",
-  ({ currentTime }: { currentTime: number }) => {
-    const video = videoRef.current;
-
-    if (!video) return;
-
-    remoteActionRef.current = true;
-
-    video.currentTime = currentTime;
-
-    video.play().catch((error) => {
-      console.log("Video play error:", error);
+      console.log("Joined room:", roomId);
     });
 
-    setTimeout(() => {
-      remoteActionRef.current = false;
-    }, 500);
-  }
-);
+    // =========================
+    // RECEIVE CHAT MESSAGE
+    // =========================
 
-  // =========================
-  // RECEIVE VIDEO PAUSE
-  // =========================
-  socket.on(
-  "video:pause",
-  ({ currentTime }: { currentTime: number }) => {
-    const video = videoRef.current;
+    socket.on("message", (message: string) => {
+      console.log("Received:", message);
 
-    if (!video) return;
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        message,
+      ]);
+    });
 
-    remoteActionRef.current = true;
+    // =========================
+    // RECEIVE VIDEO PLAY
+    // =========================
 
-    video.currentTime = currentTime;
+    socket.on(
+      "video:play",
+      ({ currentTime }: { currentTime: number }) => {
+        const video = videoRef.current;
 
-    video.pause();
+        if (!video) return;
 
-    setTimeout(() => {
-      remoteActionRef.current = false;
-    }, 500);
-  }
-);
-  return () => {
-    socket.disconnect();
-  };
-}, [roomId]);
+        remoteActionRef.current = true;
+
+        video.currentTime = currentTime;
+
+        video.play().catch((error) => {
+          console.log("Video play error:", error);
+        });
+
+        setTimeout(() => {
+          remoteActionRef.current = false;
+        }, 500);
+      }
+    );
+
+    // =========================
+    // RECEIVE VIDEO PAUSE
+    // =========================
+
+    socket.on(
+      "video:pause",
+      ({ currentTime }: { currentTime: number }) => {
+        const video = videoRef.current;
+
+        if (!video) return;
+
+        remoteActionRef.current = true;
+
+        video.currentTime = currentTime;
+
+        video.pause();
+
+        setTimeout(() => {
+          remoteActionRef.current = false;
+        }, 500);
+      }
+    );
+
+    // Cleanup
+    return () => {
+      socket.disconnect();
+    };
+  }, [roomId]);
 
   // =========================
   // SEND CHAT MESSAGE
   // =========================
+
   function sendMessage() {
     if (message.trim() === "") {
       return;
@@ -115,40 +128,134 @@ export default function RoomPage() {
   // =========================
   // VIDEO PLAY
   // =========================
- function handleVideoPlay() {
-  // অন্য user-এর Play হলে server-এ আবার পাঠাবো না
-  if (remoteActionRef.current) {
-    return;
+
+  function handleVideoPlay() {
+    if (remoteActionRef.current) {
+      return;
+    }
+
+    const currentTime =
+      videoRef.current?.currentTime || 0;
+
+    console.log("Sending video play:", currentTime);
+
+    socketRef.current?.emit("video:play", {
+      roomId: roomId,
+      currentTime: currentTime,
+    });
   }
-
-  const currentTime = videoRef.current?.currentTime || 0;
-
-  console.log("Sending video play:", currentTime);
-
-  socketRef.current?.emit("video:play", {
-    roomId: roomId,
-    currentTime: currentTime,
-  });
-}
 
   // =========================
   // VIDEO PAUSE
   // =========================
+
   function handleVideoPause() {
-  // অন্য user-এর Pause হলে server-এ আবার পাঠাবো না
-  if (remoteActionRef.current) {
-    return;
+    if (remoteActionRef.current) {
+      return;
+    }
+
+    const currentTime =
+      videoRef.current?.currentTime || 0;
+
+    console.log("Sending video pause:", currentTime);
+
+    socketRef.current?.emit("video:pause", {
+      roomId: roomId,
+      currentTime: currentTime,
+    });
   }
 
-  const currentTime = videoRef.current?.currentTime || 0;
+  // =====================================================
+  // DOWNLOAD VIDEO
+  // =====================================================
 
-  console.log("Sending video pause:", currentTime);
+  async function handleDownload() {
+    try {
+      setIsDownloading(true);
 
-  socketRef.current?.emit("video:pause", {
-    roomId: roomId,
-    currentTime: currentTime,
-  });
-}
+      // Get userId from localStorage
+      const userId = localStorage.getItem("userId");
+
+      // Get videoId from localStorage
+      const videoId = localStorage.getItem("videoId");
+
+      // Check user
+      if (!userId) {
+        alert("Please login first.");
+        return;
+      }
+
+      // Check video
+      if (!videoId) {
+        alert(
+          "Video ID not found. Please set the video ID first."
+        );
+        return;
+      }
+
+      console.log("Download request:", {
+        userId,
+        videoId,
+      });
+
+      // Call backend Download API
+      const response = await fetch(
+        "http://localhost:5000/api/downloads",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            userId: userId,
+            videoId: videoId,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      console.log("Download API response:", data);
+
+      // API error
+      if (!response.ok) {
+        alert(data.message || "Download not allowed.");
+        return;
+      }
+
+      // Success message
+      alert(
+        `Download allowed!\n\nPlan: ${data.plan}\nToday: ${data.downloadedToday}/${data.dailyLimit}`
+      );
+
+      // Create download link
+      const link = document.createElement("a");
+
+      link.href = data.video.videoUrl;
+
+      link.download = data.video.title || "video";
+
+      document.body.appendChild(link);
+
+      link.click();
+
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error("Download error:", error);
+
+      alert("Download failed. Please try again.");
+
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  // =====================================================
+  // PAGE UI
+  // =====================================================
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-purple-950 flex justify-center items-center px-4 py-8">
@@ -193,7 +300,7 @@ export default function RoomPage() {
             🎥 Watch Video
           </h2>
 
-          <div className="bg-black rounded-xl overflow-hidden mb-8 shadow-md">
+          <div className="bg-black rounded-xl overflow-hidden mb-4 shadow-md">
 
             <video
               ref={videoRef}
@@ -206,6 +313,19 @@ export default function RoomPage() {
             />
 
           </div>
+
+          {/* ================= DOWNLOAD BUTTON ================= */}
+
+          <button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="w-full mb-8 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold py-3 px-5 rounded-xl transition"
+          >
+            {isDownloading
+              ? "⏳ Checking download..."
+              : "⬇️ Download Video"}
+          </button>
+
 
           {/* ================= CHAT ================= */}
 
@@ -242,7 +362,7 @@ export default function RoomPage() {
 
           </div>
 
-          {/* Message Input */}
+          {/* ================= MESSAGE INPUT ================= */}
 
           <div className="flex gap-2">
 
