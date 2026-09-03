@@ -1,24 +1,57 @@
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
+
 const connectDB = require("./db");
 
+// =========================
+// MODELS
+// =========================
+
 const User = require("./models/User");
-const Video = require("./models/Video");
-const Download = require("./models/Download");
+
+// =========================
+// ROUTES
+// =========================
 
 const downloadRoutes = require("./routes/download.routes");
+const subscriptionRoutes = require("./routes/subscription.routes");
+
+// =========================
+// DATABASE
+// =========================
 
 connectDB();
+
+// =========================
+// EXPRESS APP
+// =========================
+
 const app = express();
-app.use(cors());
+
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+  }),
+);
 
 app.use(express.json());
 
+// =========================
+// API ROUTES
+// =========================
+
+// Download API
 app.use("/api/downloads", downloadRoutes);
 
-app.use("/api/downloads", downloadRoutes);
+// Subscription / Razorpay API
+app.use("/api/subscription", subscriptionRoutes);
+
+// =========================
+// TEST DATABASE
+// =========================
 
 app.get("/test-db", async (req, res) => {
   try {
@@ -44,9 +77,15 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
-app.use(cors());
+// =========================
+// HTTP SERVER
+// =========================
 
 const server = http.createServer(app);
+
+// =========================
+// SOCKET.IO
+// =========================
 
 const io = new Server(server, {
   cors: {
@@ -109,6 +148,10 @@ io.on("connection", (socket) => {
     console.log("User disconnected:", socket.id);
   });
 });
+
+// =========================
+// START SERVER
+// =========================
 
 server.listen(5000, () => {
   console.log("Server running on port 5000");
